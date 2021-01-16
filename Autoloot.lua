@@ -10,7 +10,7 @@ local config = {
 	}
 };
 
-local frame = UIParent;
+local frame = CreateFrame("Frame", nil, UIParent);
 
 function CheckDisableKeys() 
 	for key,value in pairs(config.autoclose.disableKeys) do --actualcode
@@ -22,16 +22,21 @@ function CheckDisableKeys()
 	return false;
 end
 
-frame:RegisterEvent('LOOT_OPENED', function(autoloot) 
+frame:RegisterEvent('LOOT_OPENED');
+
+function LOOT_OPENED(autoloot)
+	
 	local count = GetNumLootItems();
 	local shouldClose = not CheckDisableKeys();
 
-	for i = 1, count, 1 do 
-		local icon, name, quantity, rarity, locked, isQuestItem, questId, active = GetLootSlotInfo();
-		
+	for i = 1, count do 
+		local icon, name, quantity, unknown, rarity, locked, isQuestItem, questId, active = GetLootSlotInfo(i);
+
+		local lootType = GetLootSlotType(i);
+
 		local shouldLoot = (rarity >= config.minRarity) or
-						(config.lootCoins and LootSlotIsCoin(i)) or 
-						(config.lootCurrency and LootSlotIsCurrency(i)) or 
+						(config.lootCoins and lootType == 2) or 
+						(config.lootCurrency and lootType == 3) or 
 						(config.lootQuestItems and isQuestItem);
 		
 		if shouldLoot and not locked then
@@ -41,9 +46,13 @@ frame:RegisterEvent('LOOT_OPENED', function(autoloot)
 
 	if config.autoclose.enabled then
 		C_Timer.After(config.autoclose.delay / 1000, function() 
-			if shouldClose or not CheckDisableKeys() then
+			if shouldClose and not CheckDisableKeys() then
 				CloseLoot();
 			end
 		end);
 	end
+end
+
+frame:SetScript("OnEvent", function(self, event, ...)
+	LOOT_OPENED(...);
 end);

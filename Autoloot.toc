@@ -1,6 +1,6 @@
 ## Interface: 90002
 ## Author: Fusion
-## Title: Fusion Autoloot
+## Title: Autoloot
 ## Notes: Automatically loot resources and quest items
 ## Version: v1.0.0
 
