@@ -9,15 +9,21 @@ local CMP_OP = {
 }
 
 local config = {
-	minRarity = 2, 	--  3 - rare 
+	enabled = true,
+	minRarity = 2,
+	maxRarity = 4,
 	lootCoins = true,
 	lootCurrency = true,
 	lootQuestItems = true,
-	lootGatheredItems = true,
+	lootMiningItems = true,
+	lootSkinningItems = true,
+	lootHerbGatheringItems = true,
+	lootDisenchantingItems = true,
 	autoclose = {
 		enabled = true,
 		delay = 1500, -- delay in milliseconds,
-		disableKeys = { IsShiftKeyDown }
+		disableKeys = { IsShiftKeyDown },
+		disableOnMaxRarity = true, -- Do not autoclose when there is item with item rarity higher than max
 	},
 	forceLoot = {
 		{ name = " Cloth", partial = true, rarity = 1 },
@@ -30,7 +36,7 @@ local currentTimer = nil;
 local isGatheringWindow = false;
 
 function CheckDisableKeys() 
-	for key,value in pairs(config.autoclose.disableKeys) do --actualcode
+	for key, value in pairs(config.autoclose.disableKeys) do
 		if value() then
 			return true;
 		end
@@ -41,6 +47,8 @@ end
 
 frame:RegisterEvent('LOOT_OPENED');
 frame:RegisterEvent('UNIT_SPELLCAST_SUCCEEDED');
+frame:RegisterEvent('ADDON_LOADED');
+frame:RegisterEvent('PLAYER_LOGOUT');
 
 function CompareValues(lhs, rhs, op)
 	if op == nil or op == CMP_OP_EQ then
@@ -92,13 +100,17 @@ function LOOT_OPENED(autoLoot)
 
 		local lootType = GetLootSlotType(i);
 
-		local shouldLoot = (config.lootGatheredItems and isGatheringWindow) or
-						(rarity >= config.minRarity) or
+		local shouldLoot = (isGatheringWindow) or
+						(rarity >= config.minRarity and rarity <= config.maxRarity) or
 						(config.lootCoins and lootType == 2) or 
 						(config.lootCurrency and lootType == 3) or 
 						(config.lootQuestItems and isQuestItem) or 
 						CheckForceLoot(name, rarity, quantity, active);
-		
+
+		if config.autoclose.disableOnMaxRarity and rarity > config.maxRarity then
+			shouldClose = false;
+		end
+
 		if shouldLoot and not locked then
 			LootSlot(i);
 		end
@@ -119,10 +131,13 @@ function LOOT_OPENED(autoLoot)
 end
 
 frame:SetScript("OnEvent", function(self, event, ...)
+	if not config.enabled then
+		return;
+	end
+
 	if event == "LOOT_OPENED" then
 		LOOT_OPENED(...);
-	end
-	if event == "UNIT_SPELLCAST_SUCCEEDED" then
+	elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
 		local unitTarget, castGUID, spellID = ...;
 
 		local DISENCHANT_ID = 13262;
@@ -130,8 +145,238 @@ frame:SetScript("OnEvent", function(self, event, ...)
 		local HERBALISM_ID = 2366;
 		local MINING_ID = 2575;
 
-		if unitTarget == "player" and (spellID == DISENCHANT_ID or spellID == SKINNING_ID or spellID == HERBALISM_ID or spellID == MINING_ID) then
-			isGatheringWindow = true;
+		local isGathering = (config.lootDisenchantingItems and spellID == DISENCHANT_ID) or 
+							(config.lootSkinningItems and spellID == SKINNING_ID) or 
+							(config.lootHerbGatheringItems and spellID == HERBALISM_ID) or 
+							(config.lootMiningItems and spellID == MINING_ID);
+
+		if unitTarget == "player" and isGathering then
+				isGatheringWindow = true;
+		end
+	elseif event == "ADDON_LOADED" then
+		local name = ...
+		if name == "Autoloot" then
+			if AutolootConfig ~= nil then
+				config = AutolootConfig;
+			else
+				AutolootConfig = config;
+			end
+			CreateSettingsUI();
 		end
 	end
+	if event == "PLAYER_LOGOUT" then
+		AutolootConfig = config;
+	end
 end);
+
+-- Addon Settings UI 
+
+function OnSettingChanged(setting, value)
+	-- print(setting:GetVariable(), value)
+	-- print(dump(config));
+end
+
+function CreateSettingsUI()
+
+	local category = Settings.RegisterVerticalLayoutCategory("Autoloot");
+
+	do
+		local name = "Enable Autoloot";
+		local variable = "Autoloot_Toggle";
+		local variableKey = "enabled";
+		local defaultValue = true;
+
+		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
+		setting:SetValueChangedCallback(OnSettingChanged);
+
+		local tooltip = "";
+		Settings.CreateCheckbox(category, setting, tooltip);
+	end
+
+	do
+		local name = "Coins";
+		local variable = "Autoloot_coins";
+		local variableKey = "lootCoins";
+		local defaultValue = true;
+
+		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
+		setting:SetValueChangedCallback(OnSettingChanged);
+
+		local tooltip = "Enable autolooting of coins";
+		Settings.CreateCheckbox(category, setting, tooltip);
+	end
+
+	do
+		local name = "Currency";
+		local variable = "Autoloot_currency";
+		local variableKey = "lootCurrency";
+		local defaultValue = true;
+
+		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
+		setting:SetValueChangedCallback(OnSettingChanged);
+
+		local tooltip = "Enable autolooting of currency items:\nBadges, Emblems, Marks...";
+		Settings.CreateCheckbox(category, setting, tooltip);
+	end
+
+	do
+		local name = "Quest items";
+		local variable = "Autoloot_qitems";
+		local variableKey = "lootQuestItems";
+		local defaultValue = true;
+
+		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
+		setting:SetValueChangedCallback(OnSettingChanged);
+
+		local tooltip = "Enable autolooting of quest items"
+		Settings.CreateCheckbox(category, setting, tooltip);
+	end
+
+	do
+		local name = "Mining items";
+		local variable = "Autoloot_miningItems";
+		local variableKey = "lootMiningItems";
+		local defaultValue = true;
+
+		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
+		setting:SetValueChangedCallback(OnSettingChanged);
+
+		local tooltip = "Enable autolooting of items from mining";
+		Settings.CreateCheckbox(category, setting, tooltip);
+	end
+
+	do
+		local name = "Disenchanting items";
+		local variable = "Autoloot_disenchItems";
+		local variableKey = "lootDisenchantingItems";
+		local defaultValue = true;
+
+		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
+		setting:SetValueChangedCallback(OnSettingChanged);
+
+		local tooltip = "Enable autolooting of items from disenchanting";
+		Settings.CreateCheckbox(category, setting, tooltip);
+	end
+
+	do
+		local name = "Herb gathering items";
+		local variable = "Autoloot_herbgathItem";
+		local variableKey = "lootHerbGatheringItems";
+		local defaultValue = true;
+
+		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
+		setting:SetValueChangedCallback(OnSettingChanged);
+
+		local tooltip = "Enable autolooting of items from herb gathering";
+		Settings.CreateCheckbox(category, setting, tooltip);
+	end
+
+	do
+		local name = "Skinning items";
+		local variable = "Autoloot_skinningItems";
+		local variableKey = "lootSkinningItems";
+		local defaultValue = true;
+
+		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
+		setting:SetValueChangedCallback(OnSettingChanged);
+
+		local tooltip = "Enable autolooting of items from skinning";
+		Settings.CreateCheckbox(category, setting, tooltip);
+	end
+
+	do
+		local name = "Autoclose";
+		local variable = "Autoloot_autoclose";
+		local variableKey = "enabled";
+		local defaultValue = true;
+
+		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config.autoclose, type(defaultValue), name, defaultValue);
+		setting:SetValueChangedCallback(OnSettingChanged);
+
+		local tooltip = "Enable to automatically close loot window after specified delay";
+		Settings.CreateCheckbox(category, setting, tooltip);
+	end
+
+	do
+		local name = "Autoclose max rarity";
+		local variable = "Autoloot_autocloseDisableOnMaxRarity";
+		local variableKey = "disableOnMaxRarity";
+		local defaultValue = true;
+
+		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config.autoclose, type(defaultValue), name, defaultValue);
+		setting:SetValueChangedCallback(OnSettingChanged);
+
+		local tooltip = "Disable automatic loot window closing when there is an item which excedes Max Rarity";
+		Settings.CreateCheckbox(category, setting, tooltip);
+	end
+
+	do
+		local name = "Autoclose delay";
+		local variable = "Autoloot_AutocloseDelay";
+		local variableKey = "delay";
+		local defaultValue = 1500;
+		local minValue = 100;
+		local maxValue = 5000;
+		local step = 100;
+
+		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config.autoclose, type(defaultValue), name, defaultValue);
+		setting:SetValueChangedCallback(OnSettingChanged);
+
+		local tooltip = "Delay for loot window auto close (ms)";
+		local options = Settings.CreateSliderOptions(minValue, maxValue, step);
+		options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right);
+		Settings.CreateSlider(category, setting, options, tooltip);
+	end
+
+
+	local itemRarityTooltip = "";
+	for i = 0, 8 do
+		local desc = _G["ITEM_QUALITY" .. i .. "_DESC"];
+		if desc ~= nil then
+			local color = ITEM_QUALITY_COLORS[i];
+			if color ~= nil then
+				itemRarityTooltip = itemRarityTooltip .. color.hex .. i .. " - " .. desc  .. "\n";
+			end
+		end
+	end
+
+	do
+		local name = "Min item rarity";
+		local variable = "Autoloot_MinItemRarity";
+		local variableKey = "minRarity";
+		local defaultValue = 2;
+		local minValue = 0;
+		local maxValue = 8;
+		local step = 1;
+
+		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
+		setting:SetValueChangedCallback(OnSettingChanged);
+
+		local tooltip = "Minimal item rarity to be autolooted\n" .. itemRarityTooltip;
+
+		local options = Settings.CreateSliderOptions(minValue, maxValue, step)
+		options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right);
+		Settings.CreateSlider(category, setting, options, tooltip);
+	end
+
+	do
+		local name = "Max item rarity";
+		local variable = "Autoloot_MaxItemRarity";
+		local variableKey = "maxRarity";
+		local defaultValue = 4;
+		local minValue = 0;
+		local maxValue = 8;
+		local step = 1;
+
+		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
+		setting:SetValueChangedCallback(OnSettingChanged);
+
+		local tooltip = "Maximal item rarity to be autolooted\n" .. itemRarityTooltip;
+
+		local options = Settings.CreateSliderOptions(minValue, maxValue, step)
+		options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right);
+		Settings.CreateSlider(category, setting, options, tooltip);
+	end
+
+	Settings.RegisterAddOnCategory(category);
+end

@@ -1,8 +1,9 @@
-## Interface: 90002
+## Interface: 110005
 ## Author: Fusion
 ## Title: Autoloot
 ## Notes: Automatically loot resources and quest items
 ## Version: v1.0.0
+## SavedVariables: AutolootConfig
 
 # Add-On
 Autoloot.lua
