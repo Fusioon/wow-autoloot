@@ -1,13 +1,3 @@
--- Rarity comparison op
-local CMP_OP = {
-	EQ = 1,
-	NEQ = 2,
-	LT = 3,
-	LTE = 4,
-	GT = 5,
-	GTE = 6
-}
-
 local config = {
 	enabled = true,
 	minRarity = 2,
@@ -22,22 +12,35 @@ local config = {
 	autoclose = {
 		enabled = true,
 		delay = 1500, -- delay in milliseconds,
-		disableKeys = { IsShiftKeyDown },
+		disableKeys = { "shift" },
 		disableOnMaxRarity = true, -- Do not autoclose when there is item with item rarity higher than max
 	},
 	forceLoot = {
-		{ name = " Cloth", partial = true, rarity = 1 },
+		{ name = " Cloth", partial = true, minRarity = 1, maxRarity = 1 },
 		{ name = " Potion", partial = true, active = true }
 	}
+};
+
+local KEY_MAP = {
+	mod = IsModifierKeyDown,
+	shift = IsShiftKeyDown,
+	control = IsControlKeyDown,
+	alt = IsAltKeyDown
 };
 
 local frame = CreateFrame("Frame", nil, UIParent);
 local currentTimer = nil;
 local isGatheringWindow = false;
 
+frame:RegisterEvent('LOOT_OPENED');
+frame:RegisterEvent('UNIT_SPELLCAST_SUCCEEDED');
+frame:RegisterEvent('ADDON_LOADED');
+frame:RegisterEvent('PLAYER_LOGOUT');
+
 function CheckDisableKeys() 
-	for key, value in pairs(config.autoclose.disableKeys) do
-		if value() then
+	for i = 1, #config.autoclose.disableKeys do
+		local fn = KEY_MAP[string.lower(config.autoclose.disableKeys[i])];
+		if fn ~= nil and fn() then
 			return true;
 		end
 	end
@@ -45,42 +48,13 @@ function CheckDisableKeys()
 	return false;
 end
 
-frame:RegisterEvent('LOOT_OPENED');
-frame:RegisterEvent('UNIT_SPELLCAST_SUCCEEDED');
-frame:RegisterEvent('ADDON_LOADED');
-frame:RegisterEvent('PLAYER_LOGOUT');
-
-function CompareValues(lhs, rhs, op)
-	if op == nil or op == CMP_OP_EQ then
-		return lhs == rhs;
-	end
-	if op == CMP_OP.NEQ then
-		return lhs ~= rhs;
-	end
-
-	if op == CMP_OP.LT then
-		return lhs < rhs;
-	end
-	if op == CMP_OP.LTE then
-		return lhs <= rhs;
-	end
-
-	if op == CMP_OP.GT then
-		return lhs > rhs;
-	end
-	if op == CMP_OP.GTE then
-		return lhs > rhs;
-	end
-
-	error("Unknown comparison operator")
-end
-
 function CheckForceLoot(name, rarity, quantity, active)
 	for i = 1, #config.forceLoot do
 		local fl = config.forceLoot[i];
 		if (fl.partial and string.find(name, fl.name)) or (not fl.partial and name == fl.name) then
 			if (fl.active == nil or fl.active == fl.active) and
-				(fl.rarity == nil or CompareValues(rarity, fl.rarity, fl.rarityCompareOP)) then
+				(fl.minRarity == nil or rarity >= fl.minRarity) and
+				(fl.maxRarity == nil or rarity <= fl.maxRarity) then
 					return true;
 			end
 		end
@@ -88,7 +62,6 @@ function CheckForceLoot(name, rarity, quantity, active)
 
 	return false;
 end
-
 
 function LOOT_OPENED(autoLoot)
 	
@@ -376,6 +349,42 @@ function CreateSettingsUI()
 		local options = Settings.CreateSliderOptions(minValue, maxValue, step)
 		options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right);
 		Settings.CreateSlider(category, setting, options, tooltip);
+	end
+
+	-- @TODO
+	-- Custom "force loot" filter settings
+	local subcategory, subcategoryLayout = Settings.RegisterVerticalLayoutSubcategory(category, "Custom filter");
+	do
+		local name = "Force loot";
+		local variable = "Autoloot_FilterSelection";
+		local variableKey = "selection";
+		local defaultValue = 1;
+		local tooltip = "Custom filter for autoloot.";
+
+		local function GetOptions()
+			local container = Settings.CreateControlTextContainer();
+			for i = 1, #config.forceLoot do
+				container:Add(i, config.forceLoot[i].name);
+			end
+			return container:GetData();
+		end
+		local tmp = {}
+
+		local setting = Settings.RegisterAddOnSetting(subcategory, variable, variableKey, tmp, type(defaultValue), name, defaultValue);
+		Settings.CreateDropdown(subcategory, setting, GetOptions, tooltip);
+		Settings.SetOnValueChangedCallback(variable, function(_, setting, value) 
+			-- print(value);
+		end);
+
+		-- local newFilter = CreateFrame("Button");
+		-- newFilter:SetScript("OnClick", function(self, arg1)
+		-- 	print(arg1);
+		-- end);
+
+		-- local removeFilter = CreateFrame("Button");
+		-- removeFilter:SetScript("OnClick", function(self, arg1)
+		-- 	print(arg1);
+		-- end);
 	end
 
 	Settings.RegisterAddOnCategory(category);
