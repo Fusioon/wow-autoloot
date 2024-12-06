@@ -13,6 +13,7 @@ local config = {
 	lootCoins = true,
 	lootCurrency = true,
 	lootQuestItems = true,
+	lootGatheredItems = true,
 	autoclose = {
 		enabled = true,
 		delay = 1500, -- delay in milliseconds,
@@ -26,6 +27,7 @@ local config = {
 
 local frame = CreateFrame("Frame", nil, UIParent);
 local currentTimer = nil;
+local isGatheringWindow = false;
 
 function CheckDisableKeys() 
 	for key,value in pairs(config.autoclose.disableKeys) do --actualcode
@@ -38,6 +40,7 @@ function CheckDisableKeys()
 end
 
 frame:RegisterEvent('LOOT_OPENED');
+frame:RegisterEvent('UNIT_SPELLCAST_SUCCEEDED');
 
 function CompareValues(lhs, rhs, op)
 	if op == nil or op == CMP_OP_EQ then
@@ -78,17 +81,19 @@ function CheckForceLoot(name, rarity, quantity, active)
 	return false;
 end
 
-function LOOT_OPENED(autoloot)
+
+function LOOT_OPENED(autoLoot)
 	
 	local count = GetNumLootItems();
 	local shouldClose = not CheckDisableKeys();
-
+	
 	for i = 1, count do 
-		local icon, name, quantity, unknown, rarity, locked, isQuestItem, questId, active = GetLootSlotInfo(i);
+		local icon, name, quantity, currencyID, rarity, locked, isQuestItem, questId, active = GetLootSlotInfo(i);
 
 		local lootType = GetLootSlotType(i);
 
-		local shouldLoot = (rarity >= config.minRarity) or
+		local shouldLoot = (config.lootGatheredItems and isGatheringWindow) or
+						(rarity >= config.minRarity) or
 						(config.lootCoins and lootType == 2) or 
 						(config.lootCurrency and lootType == 3) or 
 						(config.lootQuestItems and isQuestItem) or 
@@ -98,6 +103,8 @@ function LOOT_OPENED(autoloot)
 			LootSlot(i);
 		end
 	end
+
+	isGatheringWindow = false;
 
 	if config.autoclose.enabled then
 		if currentTimer ~= nil then
@@ -112,5 +119,19 @@ function LOOT_OPENED(autoloot)
 end
 
 frame:SetScript("OnEvent", function(self, event, ...)
-	LOOT_OPENED(...);
+	if event == "LOOT_OPENED" then
+		LOOT_OPENED(...);
+	end
+	if event == "UNIT_SPELLCAST_SUCCEEDED" then
+		local unitTarget, castGUID, spellID = ...;
+
+		local DISENCHANT_ID = 13262;
+		local SKINNING_ID = 8613;
+		local HERBALISM_ID = 2366;
+		local MINING_ID = 2575;
+
+		if unitTarget == "player" and (spellID == DISENCHANT_ID or spellID == SKINNING_ID or spellID == HERBALISM_ID or spellID == MINING_ID) then
+			isGatheringWindow = true;
+		end
+	end
 end);
