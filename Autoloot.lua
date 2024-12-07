@@ -301,6 +301,30 @@ function CreateSettingsUI()
 		Settings.CreateSlider(category, setting, options, tooltip);
 	end
 
+	do
+		local name = "Autoclose disable modifier";
+		local variable = "Autoloot_AutocloseMod";
+		local variableKey = "value";
+		local defaultValue = "shift";
+		local tooltip = "Modifier key to disable automatic window closing";
+
+		local function GetOptions()
+			local container = Settings.CreateControlTextContainer();
+			container:Add("shift", "Shift");
+			container:Add("control", "Control");
+			container:Add("alt", "Alt");
+			container:Add("mod", "Any Modifier");
+			container:Add("", "None");
+			return container:GetData();
+		end
+		local tmp = {}
+
+		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, tmp, type(defaultValue), name, defaultValue);
+		Settings.CreateDropdown(category, setting, GetOptions, tooltip);
+		Settings.SetOnValueChangedCallback(variable, function(_, setting, value) 
+			config.autoclose.disableKeys[1] = value;
+		end);
+	end
 
 	local itemRarityTooltip = "";
 	for i = 0, 8 do
@@ -351,6 +375,21 @@ function CreateSettingsUI()
 		Settings.CreateSlider(category, setting, options, tooltip);
 	end
 
+
+	function dump(o)
+		if type(o) == 'table' then
+		   local s = '{ '
+		   for k,v in pairs(o) do
+			  if type(k) ~= 'number' then k = '"'..k..'"' end
+			  s = s .. '['..k..'] = ' .. dump(v) .. ','
+		   end
+		   return s .. '} '
+		else
+		   return tostring(o)
+		end
+	 end
+	 
+
 	-- @TODO
 	-- Custom "force loot" filter settings
 	local subcategory, subcategoryLayout = Settings.RegisterVerticalLayoutSubcategory(category, "Custom filter");
@@ -376,12 +415,16 @@ function CreateSettingsUI()
 			-- print(value);
 		end);
 
-		-- local newFilter = CreateFrame("Button");
+		-- local newFilter = CreateFrame("Button", "New", UIParent, "UIPanelButtonTemplate");
+		-- newFilter:SetSize(130, 40);
+		-- newFilter:SetHeight(40);
+		-- newFilter:SetPoint("CENTER", nil, "CENTER", 0, 0);
+		-- newFilter:SetText("New");
 		-- newFilter:SetScript("OnClick", function(self, arg1)
 		-- 	print(arg1);
 		-- end);
 
-		-- local removeFilter = CreateFrame("Button");
+		-- local removeFilter = CreateFrame("Button", "Remove");
 		-- removeFilter:SetScript("OnClick", function(self, arg1)
 		-- 	print(arg1);
 		-- end);
