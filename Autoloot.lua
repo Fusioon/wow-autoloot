@@ -1,5 +1,6 @@
 local config = {
 	enabled = true,
+	dynamicLootWindow = true,
 	minRarity = 2,
 	maxRarity = 4,
 	lootCoins = true,
@@ -31,8 +32,10 @@ local KEY_MAP = {
 local frame = CreateFrame("Frame", nil, UIParent);
 local currentTimer = nil;
 local isGatheringWindow = false;
+local lootedItems = {};
+local lootedItemsCount = 0;
 
-frame:RegisterEvent('LOOT_OPENED');
+frame:RegisterEvent('LOOT_READY');
 frame:RegisterEvent('UNIT_SPELLCAST_SUCCEEDED');
 frame:RegisterEvent('ADDON_LOADED');
 frame:RegisterEvent('PLAYER_LOGOUT');
@@ -63,11 +66,14 @@ function CheckForceLoot(name, rarity, quantity, active)
 	return false;
 end
 
-function LOOT_OPENED(autoLoot)
+function LOOT_READY(autoLoot)
 	
 	local count = GetNumLootItems();
 	local shouldClose = not CheckDisableKeys();
 	
+	wipe(lootedItems);
+	lootedItemsCount = 0;
+
 	for i = 1, count do 
 		local icon, name, quantity, currencyID, rarity, locked, isQuestItem, questId, active = GetLootSlotInfo(i);
 
@@ -86,6 +92,10 @@ function LOOT_OPENED(autoLoot)
 
 		if shouldLoot and not locked then
 			LootSlot(i);
+			lootedItems[i] = true;
+			lootedItemsCount = lootedItemsCount + 1;
+		else
+			lootedItems[i] = false;
 		end
 	end
 
@@ -108,8 +118,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
 		return;
 	end
 
-	if event == "LOOT_OPENED" then
-		LOOT_OPENED(...);
+	if event == "LOOT_READY" then
+		LOOT_READY(...);
 	elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
 		local unitTarget, castGUID, spellID = ...;
 
@@ -135,6 +145,9 @@ frame:SetScript("OnEvent", function(self, event, ...)
 				AutolootConfig = config;
 			end
 			CreateSettingsUI();
+			if (config.dynamicLootWindow) then
+				HookDynamicLootWindowSize();
+			end
 		end
 	end
 	if event == "PLAYER_LOGOUT" then
@@ -142,12 +155,60 @@ frame:SetScript("OnEvent", function(self, event, ...)
 	end
 end);
 
--- Addon Settings UI 
+function HookDynamicLootWindowSize()
+	local regions = { LootFrame:GetRegions() };
+	for i = 1, #regions do
+		local r = regions[i];
+		if (r.GetText and r:GetText() == ITEMS) then
+			r:ClearAllPoints();
+			r:SetPoint("TOP", 12, -5);
+		end
+	end
 
-function OnSettingChanged(setting, value)
-	-- print(setting:GetVariable(), value)
-	-- print(dump(config));
+	local x, y = 0, -4;
+	local buttonHeight = LootButton1:GetHeight() + abs(y);
+	local baseHeight = LootFrame:GetHeight() - (buttonHeight * LOOTFRAME_NUMBUTTONS);
+
+	hooksecurefunc("LootFrame_Show", function(self, ...)
+		local maxButtons = floor(UIParent:GetHeight()/LootButton1:GetHeight() * 0.7)
+		local num = GetNumLootItems();
+
+		num = min(num, maxButtons);
+		
+		LootFrame:SetHeight(baseHeight + ((num - lootedItemsCount) * buttonHeight));
+
+		local positionIndex = 0;
+
+		for i = 1, num do
+			if (not lootedItems[i]) then
+				if (positionIndex == 0) then
+					local button = _G["LootButton"..i];
+					button:ClearAllPoints();
+					button:SetPoint("TOPLEFT", LootFrame, "TOPLEFT", 9, -64 + y);
+					positionIndex = i;
+				end
+
+				if (i > LOOTFRAME_NUMBUTTONS) then
+					local button = _G["LootButton"..i];
+					if (not button) then
+						button = CreateFrame(ItemButtonMixin and "ItemButton" or "Button", "LootButton"..i, LootFrame, "LootButtonTemplate", i);
+					end
+					LOOTFRAME_NUMBUTTONS = i;
+				end
+				if (positionIndex ~= i) then
+					local button = _G["LootButton"..i];
+					button:ClearAllPoints();
+					button:SetPoint("TOP", "LootButton"..positionIndex, "BOTTOM", x, y);
+				end
+				positionIndex = i;
+			end
+		end
+		
+		LootFrame_Update();
+	end);
 end
+
+-- Addon Settings UI 
 
 function CreateSettingsUI()
 
@@ -160,9 +221,23 @@ function CreateSettingsUI()
 		local defaultValue = true;
 
 		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
-		setting:SetValueChangedCallback(OnSettingChanged);
 
 		local tooltip = "";
+		Settings.CreateCheckbox(category, setting, tooltip);
+	end
+	
+	do
+		local name = "Dynamic loot window";
+		local variable = "Autoloot_DynamicLootWindowSize";
+		local variableKey = "dynamicLootWindow";
+		local defaultValue = true;
+
+		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
+		setting:SetValueChangedCallback(function (...)
+			
+		end);
+
+		local tooltip = "Dynamically change loot window size to show as much items as possible\n(Requires UI reload)";
 		Settings.CreateCheckbox(category, setting, tooltip);
 	end
 
@@ -173,7 +248,6 @@ function CreateSettingsUI()
 		local defaultValue = true;
 
 		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
-		setting:SetValueChangedCallback(OnSettingChanged);
 
 		local tooltip = "Enable autolooting of coins";
 		Settings.CreateCheckbox(category, setting, tooltip);
@@ -186,7 +260,6 @@ function CreateSettingsUI()
 		local defaultValue = true;
 
 		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
-		setting:SetValueChangedCallback(OnSettingChanged);
 
 		local tooltip = "Enable autolooting of currency items:\nBadges, Emblems, Marks...";
 		Settings.CreateCheckbox(category, setting, tooltip);
@@ -199,7 +272,6 @@ function CreateSettingsUI()
 		local defaultValue = true;
 
 		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
-		setting:SetValueChangedCallback(OnSettingChanged);
 
 		local tooltip = "Enable autolooting of quest items"
 		Settings.CreateCheckbox(category, setting, tooltip);
@@ -212,7 +284,6 @@ function CreateSettingsUI()
 		local defaultValue = true;
 
 		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
-		setting:SetValueChangedCallback(OnSettingChanged);
 
 		local tooltip = "Enable autolooting of items from mining";
 		Settings.CreateCheckbox(category, setting, tooltip);
@@ -225,7 +296,6 @@ function CreateSettingsUI()
 		local defaultValue = true;
 
 		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
-		setting:SetValueChangedCallback(OnSettingChanged);
 
 		local tooltip = "Enable autolooting of items from disenchanting";
 		Settings.CreateCheckbox(category, setting, tooltip);
@@ -238,7 +308,6 @@ function CreateSettingsUI()
 		local defaultValue = true;
 
 		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
-		setting:SetValueChangedCallback(OnSettingChanged);
 
 		local tooltip = "Enable autolooting of items from herb gathering";
 		Settings.CreateCheckbox(category, setting, tooltip);
@@ -251,7 +320,6 @@ function CreateSettingsUI()
 		local defaultValue = true;
 
 		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
-		setting:SetValueChangedCallback(OnSettingChanged);
 
 		local tooltip = "Enable autolooting of items from skinning";
 		Settings.CreateCheckbox(category, setting, tooltip);
@@ -264,7 +332,6 @@ function CreateSettingsUI()
 		local defaultValue = true;
 
 		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config.autoclose, type(defaultValue), name, defaultValue);
-		setting:SetValueChangedCallback(OnSettingChanged);
 
 		local tooltip = "Enable to automatically close loot window after specified delay";
 		Settings.CreateCheckbox(category, setting, tooltip);
@@ -277,7 +344,6 @@ function CreateSettingsUI()
 		local defaultValue = true;
 
 		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config.autoclose, type(defaultValue), name, defaultValue);
-		setting:SetValueChangedCallback(OnSettingChanged);
 
 		local tooltip = "Disable automatic loot window closing when there is an item which excedes Max Rarity";
 		Settings.CreateCheckbox(category, setting, tooltip);
@@ -293,7 +359,6 @@ function CreateSettingsUI()
 		local step = 100;
 
 		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config.autoclose, type(defaultValue), name, defaultValue);
-		setting:SetValueChangedCallback(OnSettingChanged);
 
 		local tooltip = "Delay for loot window auto close (ms)";
 		local options = Settings.CreateSliderOptions(minValue, maxValue, step);
@@ -347,7 +412,6 @@ function CreateSettingsUI()
 		local step = 1;
 
 		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
-		setting:SetValueChangedCallback(OnSettingChanged);
 
 		local tooltip = "Minimal item rarity to be autolooted\n" .. itemRarityTooltip;
 
@@ -366,7 +430,6 @@ function CreateSettingsUI()
 		local step = 1;
 
 		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
-		setting:SetValueChangedCallback(OnSettingChanged);
 
 		local tooltip = "Maximal item rarity to be autolooted\n" .. itemRarityTooltip;
 
