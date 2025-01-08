@@ -10,6 +10,7 @@ local config = {
 	lootSkinningItems = true,
 	lootHerbGatheringItems = true,
 	lootDisenchantingItems = true,
+	lootFishing = true,
 	autoclose = {
 		enabled = true,
 		delay = 1500, -- delay in milliseconds,
@@ -74,6 +75,14 @@ function LOOT_READY(autoLoot)
 	wipe(lootedItems);
 	lootedItemsCount = 0;
 
+	local lootMethod, masterlooterPartyID, masterlooterRaidID = GetLootMethod();
+	local lootThreshold = GetLootThreshold();
+	local needsRoll = ((UnitInAnyGroup("player")) and (lootMethod ~= "freeforall"));
+
+	if (config.lootFishing and IsFishingLoot()) then
+		isGatheringWindow = true;
+	end
+
 	for i = 1, count do 
 		local icon, name, quantity, currencyID, rarity, locked, isQuestItem, questId, active = GetLootSlotInfo(i);
 
@@ -93,7 +102,9 @@ function LOOT_READY(autoLoot)
 		if shouldLoot and not locked then
 			LootSlot(i);
 			lootedItems[i] = true;
-			lootedItemsCount = lootedItemsCount + 1;
+			if (not needsRoll or rarity < lootThreshold) then
+				lootedItemsCount = lootedItemsCount + 1;
+			end
 		else
 			lootedItems[i] = false;
 		end
@@ -326,6 +337,18 @@ function CreateSettingsUI()
 	end
 
 	do
+		local name = "Fishing items";
+		local variable = "Autoloot_fishingItems";
+		local variableKey = "lootFishing";
+		local defaultValue = true;
+
+		local setting = Settings.RegisterAddOnSetting(category, variable, variableKey, config, type(defaultValue), name, defaultValue);
+
+		local tooltip = "Enable autolooting of items from fishing";
+		Settings.CreateCheckbox(category, setting, tooltip);
+	end
+
+	do
 		local name = "Autoclose";
 		local variable = "Autoloot_autoclose";
 		local variableKey = "enabled";
@@ -455,7 +478,8 @@ function CreateSettingsUI()
 
 	-- @TODO
 	-- Custom "force loot" filter settings
-	local subcategory, subcategoryLayout = Settings.RegisterVerticalLayoutSubcategory(category, "Custom filter");
+	local filtersFrame = CreateFrame("Frame");
+	local filterSubcategory, filtersSubcategoryLayout = Settings.RegisterCanvasLayoutSubcategory(category, filtersFrame, "Custom filter");
 	do
 		local name = "Force loot";
 		local variable = "Autoloot_FilterSelection";
@@ -472,25 +496,56 @@ function CreateSettingsUI()
 		end
 		local tmp = {}
 
-		local setting = Settings.RegisterAddOnSetting(subcategory, variable, variableKey, tmp, type(defaultValue), name, defaultValue);
-		Settings.CreateDropdown(subcategory, setting, GetOptions, tooltip);
-		Settings.SetOnValueChangedCallback(variable, function(_, setting, value) 
-			-- print(value);
+		local index = -1;
+		local function setSelected(i, force)
+			if (i == index and not force) then
+				return;
+			end
+			index = i;
+		end
+
+		-- local setting = Settings.RegisterAddOnSetting(filterSubcategory, variable, variableKey, tmp, type(defaultValue), name, defaultValue);
+		-- Settings.CreateDropdown(filterSubcategory, setting, GetOptions, tooltip);
+		-- Settings.SetOnValueChangedCallback(variable, function(_, setting, value) 
+		-- 	-- print(value);
+		-- 	setSelected(value, false);
+		-- end);
+
+		local newFilter = CreateFrame("Button", nil, filtersFrame, "UIPanelButtonTemplate");
+		newFilter:SetSize(130, 24);
+		newFilter:SetPoint("TOPLEFT", filtersFrame, "TOPLEFT", 0, 0);
+		newFilter:SetText("New");
+		newFilter:SetScript("OnClick", function(self, arg1)
+
 		end);
 
-		-- local newFilter = CreateFrame("Button", "New", UIParent, "UIPanelButtonTemplate");
-		-- newFilter:SetSize(130, 40);
-		-- newFilter:SetHeight(40);
-		-- newFilter:SetPoint("CENTER", nil, "CENTER", 0, 0);
-		-- newFilter:SetText("New");
-		-- newFilter:SetScript("OnClick", function(self, arg1)
-		-- 	print(arg1);
-		-- end);
+		local removeFilter = CreateFrame("Button", nil, filtersFrame, "UIPanelButtonTemplate");
+		removeFilter:SetSize(130, 24);
+		removeFilter:SetPoint("TOPRIGHT", filtersFrame, "TOPRIGHT", 0, 0);
+		removeFilter:SetText("Remove");
+		removeFilter:SetScript("OnClick", function(self, arg1)
+			
+		end);
 
-		-- local removeFilter = CreateFrame("Button", "Remove");
-		-- removeFilter:SetScript("OnClick", function(self, arg1)
-		-- 	print(arg1);
-		-- end);
+		local selector = CreateFrame("Frame", nil, filtersFrame, "SettingsDropdownControlTemplate");
+		selector:SetSize(130, 24);
+		selector:SetPoint("CENTER", filtersFrame, "TOP", -65, -12);
+		
+		-- local nameInput = CreateFrame("EditBox", nil, filtersFrame, "InputBoxTemplate");
+		-- nameInput:SetSize(200, 20);
+		-- nameInput:SetPoint("LEFT", filtersFrame, "TOPLEFT", 0, -60);
+
+		local enabledCheckbox = CreateFrame("CheckButton", nil, filtersFrame, "UICheckButtonTemplate");
+		enabledCheckbox:SetSize(20, 20);
+		enabledCheckbox:SetPoint("LEFT", filtersFrame, "TOPLEFT", 0, -80);
+		local fuzzyCheckbox = CreateFrame("CheckButton", nil, filtersFrame, "UICheckButtonTemplate");
+		fuzzyCheckbox:SetSize(20, 20);
+		fuzzyCheckbox:SetPoint("LEFT", filtersFrame, "TOPLEFT", 0, -100);
+
+		local minRaritySlider = CreateFrame("Slider", nil, filtersFrame, "SettingsListElementTemplate");
+		local maxnRaritySlider = CreateFrame("Slider", nil, filtersFrame, "SettingsListElementTemplate");
+		
+
 	end
 
 	Settings.RegisterAddOnCategory(category);
